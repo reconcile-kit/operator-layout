@@ -113,6 +113,7 @@ func SetController[T resource.Object[T]](app *Application, gk resource.GroupKind
 	currentLoop.Run()
 	app.AddReceiver(sc)
 	app.AddStopped(currentLoop)
+	app.logger.Infof("Controller started : ShardID: %s, Kind: %s, Group: %s", app.shardID, gk.Kind, gk.Group)
 
 	return nil
 }
