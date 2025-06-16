@@ -1,0 +1,72 @@
+name: Build and Public Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  APP_NAME: ${{ github.event.repository.name }}
+  GO_VERSION: "1.24"
+  TARGET_REPO: base-cloud-engine/${{ github.event.repository.name }}-dl
+
+# ──────────────────────────────────────────────────────────── JOB build ──
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - id: version
+        name: Extract version from tag
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          GOOS=linux GOARCH=${{ matrix.arch }} CGO_ENABLED=0 \
+            go build -o ${{ github.event.repository.name }}-linux-${{ matrix.arch }} ./cmd/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-linux-${{ matrix.arch }}
+          path: ${{ github.event.repository.name }}-linux-${{ matrix.arch }}
+
+  # ────────────────────────────────────────────────────────── JOB release ──
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release
+
+      - name: Publish binaries to base-cloud-engine/agents
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          VERSION:  ${{ needs.build.outputs.version }}
+          TARGET_REPO: ${{ env.TARGET_REPO }}
+        run: |
+          echo "Artifacts:"
+          ls -R ./release
+
+          gh release create "v${VERSION}" ./release/*/* \
+            --repo "${TARGET_REPO}" \
+            --title "Release v${VERSION}" \
+            --notes "Automated release built for public download" \
+            --latest
